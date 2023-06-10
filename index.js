@@ -4,6 +4,7 @@ const dotenv = require('dotenv');
 dotenv.config({ path: './config.env' });
 const app = express();
 const jwt = require('jsonwebtoken');
+const { promisify } = require('util');
 const http = require('http');
 const dns = require('dns');
 const DB = process.env.MONGO_URI;
@@ -42,8 +43,27 @@ io.on('connection', (socket) => {
   });
 });
 io.on('connection', (socket) => {
-  socket.on('sendTokenAndDomain', (res) => {
+  socket.on('sendTokenAndDomain', async (res) => {
     console.log(res);
+    const existingDomain = await Domain.findOne({
+      domainName: res?.domainName,
+    });
+    if (!existingDomain) {
+      io.emit('responseAccess', {
+        success: false,
+        message: 'invalid domainName',
+      });
+    } else if (checkToken(res?.accessToken) === false) {
+      io.emit('responseAccess', {
+        success: false,
+        message: 'invalid accessToken',
+      });
+    } else {
+      io.emit('responseAccess', {
+        success: true,
+        message: 'valid token and domain',
+      });
+    }
   });
 });
 io.on('connection', (socket) => {
@@ -83,6 +103,19 @@ io.on('connection', (socket) => {
     }
   });
 });
+const checkToken = async (token) => {
+  if (!token) {
+    return false;
+  }
+  try {
+    const decode = await promisify(jwt.verify)(token, process.env.JWT_SECRET);
+    console.log('Decoded payload:', decode);
+    return true;
+  } catch (error) {
+    console.error('Token verification failed:', error.message);
+    return false;
+  }
+};
 server.listen(3001, () => {
   console.log('SERVER RUNNING');
 });
